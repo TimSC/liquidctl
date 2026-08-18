@@ -63,7 +63,7 @@ import colorsys, logging, time, errno
 
 from liquidctl.driver.usb import UsbHidDriver
 from liquidctl.error import NotSupportedByDriver, NotSupportedByDevice
-from liquidctl.util import u16be_from, clamp, mkCrcFun
+from liquidctl.util import u16be_from, clamp, interpolate_profile, mkCrcFun, normalize_profile
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,6 +78,18 @@ _AQC_CTRL_REPORT_ID = 0x03
 
 _AQC_FAN_TYPE_OFFSET = 0x00
 _AQC_FAN_PERCENT_OFFSET = 0x01
+
+# Fan controller types; the "direct percent" value is what _set_fixed_speed_directly
+# selects, and the curve type makes the device follow the stored temperature/power
+# points instead
+_AQC_FAN_TYPE_PERCENT = 0x00
+_AQC_FAN_TYPE_CURVE = 0x02
+
+# Each fan controller stores a fixed number of (temperature, power) points, with
+# temperatures in centidegrees Celsius and powers in centipercent
+_AQC_CURVE_POINT_COUNT = 16
+_AQC_CURVE_TEMP_OFFSET = 0x15
+_AQC_CURVE_POWER_OFFSET = 0x35
 
 # Octo RGBpx lighting: the control report holds a fixed number of LED controller
 # records, each covering a range of LEDs on one of the strips
@@ -436,15 +448,74 @@ class Aquacomputer(UsbHidDriver):
         return self._get_status_directly()
 
     def set_speed_profile(self, channel, profile, **kwargs):
-        if (
-            self._device_info["type"] == self._DEVICE_D5NEXT
-            or self._device_info["type"] == self._DEVICE_OCTO
-            or self._device_info["type"] == self._DEVICE_QUADRO
-        ):
+        """Set a fan to follow a speed profile.
+
+        Valid channel values are 'fanN', where N >= 1 is the fan number.
+
+        The profile is a sequence of (temperature, duty) pairs, with
+        temperatures in Celsius and duties in percent.  The device stores a
+        fixed number of points, so the profile is resampled onto an evenly
+        spaced temperature axis that spans it; supplying more or fewer points
+        than the device stores is therefore fine.
+
+        The fan is also switched to the curve control type, so that the device
+        follows the stored points instead of a fixed duty.
+        """
+
+        if self._device_info["type"] in [self._DEVICE_FARBWERK360, self._DEVICE_FARBWERK]:
+            raise NotSupportedByDevice()
+
+        if self._device_info["type"] != self._DEVICE_OCTO:
             # Not yet reverse engineered / implemented
             raise NotSupportedByDriver()
-        elif self._device_info["type"] in [self._DEVICE_FARBWERK360, self._DEVICE_FARBWERK]:
-            raise NotSupportedByDevice()
+
+        if channel not in self._device_info["fan_ctrl"]:
+            channels = ", ".join(self._device_info["fan_ctrl"].keys())
+            raise ValueError(f"unknown channel, should be one of: {channels}")
+
+        profile = list(profile)
+        if not profile:
+            raise ValueError("profile must have at least one point")
+
+        # Enforce a monotonic profile, and a failsafe at the highest temperature
+        # the user asked for, so the resampling below cannot invent a dip
+        critical_temp = max(temp for temp, _ in profile)
+        profile = normalize_profile(profile, critical_temp)
+
+        # The device stores a fixed number of points; spread them evenly between
+        # the first and last temperatures of the profile and interpolate the
+        # duties, which preserves the shape the user asked for
+        first_temp, last_temp = profile[0][0], profile[-1][0]
+        steps = _AQC_CURVE_POINT_COUNT - 1
+        span = last_temp - first_temp
+
+        points = []
+        for i in range(_AQC_CURVE_POINT_COUNT):
+            temp = first_temp + (span * i / steps if span else 0)
+            duty = clamp(interpolate_profile(profile, temp), 0, 100)
+            points.append((temp, duty))
+
+        _LOGGER.debug("setting %s curve to %r", channel, points)
+
+        # Request an up to date ctrl report
+        report_length = self._device_info["ctrl_report_length"]
+        ctrl_settings = self.device.get_feature_report(_AQC_CTRL_REPORT_ID, report_length)
+
+        fan_ctrl_offset = self._device_info["fan_ctrl"][channel]
+
+        # Set fan to follow its stored curve
+        ctrl_settings[fan_ctrl_offset + _AQC_FAN_TYPE_OFFSET] = _AQC_FAN_TYPE_CURVE
+
+        for i, (temp, duty) in enumerate(points):
+            # Centidegrees Celsius and centipercent
+            put_unaligned_be16(
+                round(temp * 100), ctrl_settings, fan_ctrl_offset + _AQC_CURVE_TEMP_OFFSET + i * 2
+            )
+            put_unaligned_be16(
+                round(duty * 100), ctrl_settings, fan_ctrl_offset + _AQC_CURVE_POWER_OFFSET + i * 2
+            )
+
+        self._write_ctrl_report(ctrl_settings)
 
     def _fan_name_to_hwmon_names(self, channel):
         if "hwmon_ctrl_mapping" in self._device_info:

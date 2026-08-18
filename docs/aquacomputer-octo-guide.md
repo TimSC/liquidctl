@@ -76,6 +76,24 @@ Currently, eight optionally connected fans can be set to a fixed duty cycle, ran
 
 Valid channel values on the Octo are `fan1` through `fan8`.
 
+### Fan speed profiles
+
+_New in git._<br>
+
+Fans can also follow a temperature/duty profile, using the temperature sensor
+the fan is already configured to read on the device.
+
+```
+# liquidctl set fan1 speed 30 20 40 60 50 100
+                ^^^^       ^^^^^^^^^^^^^^^^^^
+               channel     temperature/duty pairs
+```
+
+The device stores sixteen points per fan, so the supplied profile is resampled
+onto an evenly spaced temperature axis spanning it; more or fewer points than
+that can be given. Setting a profile also switches the fan to the device's
+curve control type.
+
 ## Lighting
 
 _New in git._<br>

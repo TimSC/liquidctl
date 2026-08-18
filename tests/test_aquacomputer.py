@@ -756,9 +756,33 @@ def test_octo_set_fixed_speeds_hwmon(mockOctoDevice, has_support, tmp_path):
         assert fan_report.data[0xAE:0xB1] == [0, 19, 136]  # 0, <5000>
 
 
-def test_octo_speed_profiles_not_supported(mockOctoDevice):
-    with pytest.raises(NotSupportedByDriver):
-        mockOctoDevice.set_speed_profile("fan", None)
+def test_octo_set_speed_profile(mockOctoDevice):
+    mockOctoDevice.set_speed_profile("fan1", [(30, 20), (40, 60), (50, 100)])
+
+    (report,) = mockOctoDevice.device.sent
+
+    assert report.number == 3
+
+    # fan1 is switched to the curve control type
+    assert report.data[0x59] == 0x02
+
+    # sixteen (temperature, power) points, in centidegrees and centipercent,
+    # evenly spanning the profile
+    temps = [(report.data[0x6E + i * 2] << 8) | report.data[0x6F + i * 2] for i in range(16)]
+    powers = [(report.data[0x8E + i * 2] << 8) | report.data[0x8F + i * 2] for i in range(16)]
+
+    assert temps[0] == 3000
+    assert temps[-1] == 5000
+    assert temps == sorted(temps)
+
+    assert powers[0] == 2000
+    assert powers[-1] == 10000
+    assert powers == sorted(powers)
+
+
+def test_octo_set_speed_profile_invalid_channel(mockOctoDevice):
+    with pytest.raises(ValueError):
+        mockOctoDevice.set_speed_profile("fan9", [(30, 20), (50, 100)])
 
 
 def test_octo_set_color(mockOctoDevice):
