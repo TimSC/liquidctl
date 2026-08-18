@@ -761,6 +761,38 @@ def test_octo_speed_profiles_not_supported(mockOctoDevice):
         mockOctoDevice.set_speed_profile("fan", None)
 
 
+def test_octo_set_color(mockOctoDevice):
+    mockOctoDevice.set_color("led1", "fixed", [(0xFF, 0x00, 0x00)])
+
+    (report,) = mockOctoDevice.device.sent
+
+    assert report.number == 3
+
+    # led1 is switched to the fixed color mode
+    assert report.data[0x309] == 0x01
+
+    # pure red: hue 0, full saturation and value
+    assert report.data[0x334:0x338] == [0x00, 0x00, 0xFF, 0xFF]
+
+
+def test_octo_set_color_off(mockOctoDevice):
+    mockOctoDevice.set_color("led1", "off", [])
+
+    (report,) = mockOctoDevice.device.sent
+
+    assert report.data[0x309] == 0x00
+
+
+def test_octo_set_color_invalid_channel(mockOctoDevice):
+    with pytest.raises(ValueError):
+        mockOctoDevice.set_color("led13", "fixed", [(0xFF, 0x00, 0x00)])
+
+
+def test_octo_set_color_invalid_mode(mockOctoDevice):
+    with pytest.raises(ValueError):
+        mockOctoDevice.set_color("led1", "breathing", [(0xFF, 0x00, 0x00)])
+
+
 @pytest.fixture
 def mockQuadroDevice():
     device = _MockQuadroDevice()

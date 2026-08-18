@@ -76,6 +76,32 @@ Currently, eight optionally connected fans can be set to a fixed duty cycle, ran
 
 Valid channel values on the Octo are `fan1` through `fan8`.
 
+## Lighting
+
+_New in git._<br>
+
+The Octo drives two RGBpx strips, split between twelve LED controllers, each
+covering a range of LEDs on one of the strips. The channels are `led1` through
+`led12`, and correspond to the controllers as shown in the device's own
+configuration software.
+
+```
+# liquidctl set led1 color fixed ff8000
+                ^^^^       ^^^^^ ^^^^^^
+              channel      mode  color
+```
+
+| Mode | Colors | Notes |
+| --- | --- | --- |
+| `fixed` | one | lights the controller's LED range in a single color |
+| `off` | none | disables the controller |
+
+The device supports several animated modes as well, but their parameters have
+not been reverse engineered, so they are not exposed.
+
+Note that the LED ranges themselves, and which strip each controller drives,
+are not configured by liquidctl; the device keeps whatever layout it was given.
+
 ## Interaction with Linux hwmon drivers
 [Linux hwmon]: #interaction-with-linux-hwmon-drivers
 
