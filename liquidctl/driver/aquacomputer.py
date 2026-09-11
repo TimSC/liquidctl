@@ -516,9 +516,7 @@ class Aquacomputer(UsbHidDriver):
         # Set fan to follow its stored curve
         ctrl_settings[fan_ctrl_offset + _AQC_FAN_TYPE_OFFSET] = _AQC_FAN_TYPE_CURVE
         if temperature_sensor is not None:
-            temp_sensor_count = len(self._device_info["temp_sensors"]) + len(
-                self._device_info["virt_temp_sensors"]
-            )
+            temp_sensor_count = len(self._device_info["temp_sensors"])
             temperature_sensor = clamp(temperature_sensor, 1, temp_sensor_count)
             put_unaligned_be16(
                 temperature_sensor - 1,

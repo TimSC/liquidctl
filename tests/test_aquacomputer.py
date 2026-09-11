@@ -791,6 +791,16 @@ def test_octo_set_speed_profile_invalid_channel(mockOctoDevice):
         mockOctoDevice.set_speed_profile("fan9", [(30, 20), (50, 100)])
 
 
+def test_octo_set_speed_profile_clamps_source_to_physical_sensors(mockOctoDevice):
+    mockOctoDevice.set_speed_profile(
+        "fan1", [(30, 20), (40, 60), (50, 100)], temperature_sensor=20
+    )
+
+    (report,) = mockOctoDevice.device.sent
+
+    assert report.data[0x5C:0x5E] == [0, 3]
+
+
 def test_octo_set_color(mockOctoDevice):
     mockOctoDevice.set_color("led1", "fixed", [(0xFF, 0x00, 0x00)])
 
@@ -1092,3 +1102,13 @@ def test_quadro_set_speed_profile_keeps_source_by_default(mockQuadroDevice):
     (report,) = mockQuadroDevice.device.sent
 
     assert report.data[0x8D:0x8F] == original_source
+
+
+def test_quadro_set_speed_profile_clamps_source_to_physical_sensors(mockQuadroDevice):
+    mockQuadroDevice.set_speed_profile(
+        "fan2", [(20, 20), (40, 60), (60, 100)], temperature_sensor=20
+    )
+
+    (report,) = mockQuadroDevice.device.sent
+
+    assert report.data[0x8D:0x8F] == [0, 3]

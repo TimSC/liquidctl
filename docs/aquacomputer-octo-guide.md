@@ -80,9 +80,9 @@ Valid channel values on the Octo are `fan1` through `fan8`.
 
 _New in git._<br>
 
-Fans can also follow a temperature/duty profile. The temperature sensor can be
-selected with `--temperature-sensor`; if unspecified, the fan's existing source
-sensor selection is preserved.
+Fans can also follow a temperature/duty profile. The physical temperature
+sensor can be selected with `--temperature-sensor`; if unspecified, the fan's
+existing source sensor selection is preserved.
 
 ```
 # liquidctl set fan1 speed 30 20 40 60 50 100 --temperature-sensor 1
