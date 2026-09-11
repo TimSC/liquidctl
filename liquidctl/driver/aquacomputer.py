@@ -78,10 +78,19 @@ _AQC_CTRL_REPORT_ID = 0x03
 
 _AQC_FAN_TYPE_OFFSET = 0x00
 _AQC_FAN_PERCENT_OFFSET = 0x01
+_AQC_FAN_SOURCE_OFFSET = 0x03
+_AQC_FAN_CURVE_OFFSET = 0x13
+_AQC_FAN_CURVE_START_OFFSET = 0x00
+_AQC_FAN_CURVE_TEMP_OFFSET = 0x02
+_AQC_FAN_CURVE_DUTY_OFFSET = 0x22
+_AQC_FAN_CURVE_POINTS = 16
+
+_AQC_FAN_MODE_DIRECT = 0
+_AQC_FAN_MODE_CURVE = 2
 
 
-def put_unaligned_be16(value, data, offset):
-    value_be = bytearray(value.to_bytes(2, "big"))
+def put_unaligned_be16(value, data, offset, signed=False):
+    value_be = bytearray(value.to_bytes(2, "big", signed=signed))
     data[offset], data[offset + 1] = value_be[0], value_be[1]
 
 
@@ -416,11 +425,81 @@ class Aquacomputer(UsbHidDriver):
 
         return self._get_status_directly()
 
-    def set_speed_profile(self, channel, profile, **kwargs):
+    def _set_quadro_speed_profile_directly(self, channel, profile, temperature_sensor):
+        profile = list(profile)
+        if len(profile) != _AQC_FAN_CURVE_POINTS:
+            raise ValueError(
+                f"exactly {_AQC_FAN_CURVE_POINTS} speed curve points must be configured"
+            )
+
+        report_length = self._device_info["ctrl_report_length"]
+        ctrl_settings = self.device.get_feature_report(_AQC_CTRL_REPORT_ID, report_length)
+
+        fan_ctrl_offset = self._device_info["fan_ctrl"][channel]
+        curve_offset = fan_ctrl_offset + _AQC_FAN_CURVE_OFFSET
+
+        # Set fan to curve mode and select the 0-based controller source sensor.
+        ctrl_settings[fan_ctrl_offset + _AQC_FAN_TYPE_OFFSET] = _AQC_FAN_MODE_CURVE
+        put_unaligned_be16(
+            temperature_sensor - 1,
+            ctrl_settings,
+            fan_ctrl_offset + _AQC_FAN_SOURCE_OFFSET,
+            signed=True,
+        )
+
+        temp, _ = profile[0]
+        put_unaligned_be16(
+            temp * 100,
+            ctrl_settings,
+            curve_offset + _AQC_FAN_CURVE_START_OFFSET,
+            signed=True,
+        )
+
+        for idx, (temp, duty) in enumerate(profile):
+            put_unaligned_be16(
+                temp * 100,
+                ctrl_settings,
+                curve_offset + _AQC_FAN_CURVE_TEMP_OFFSET + idx * 2,
+                signed=True,
+            )
+            put_unaligned_be16(
+                clamp(duty, 0, 100) * 100,
+                ctrl_settings,
+                curve_offset + _AQC_FAN_CURVE_DUTY_OFFSET + idx * 2,
+                signed=True,
+            )
+
+        crc16usb_func = mkCrcFun("crc-16-usb")
+
+        checksum_part = bytes(ctrl_settings[0x01 : report_length - 3 + 1])
+        checksum_bytes = crc16usb_func(checksum_part)
+        put_unaligned_be16(checksum_bytes, ctrl_settings, report_length - 2)
+
+        time.sleep(0.2)
+
+        self.device.send_feature_report(ctrl_settings)
+
+    def set_speed_profile(
+        self, channel, profile, temperature_sensor=1, direct_access=False, **kwargs
+    ):
+        if self._device_info["type"] == self._DEVICE_QUADRO:
+            temp_sensor_count = len(self._device_info["temp_sensors"]) + len(
+                self._device_info["virt_temp_sensors"]
+            )
+            temperature_sensor = clamp(temperature_sensor, 1, temp_sensor_count)
+
+            if self._hwmon and not direct_access:
+                _LOGGER.warning(
+                    "required speed profile functionality is not available in %s kernel driver, "
+                    "falling back to direct access",
+                    self._hwmon.driver,
+                )
+
+            return self._set_quadro_speed_profile_directly(channel, profile, temperature_sensor)
+
         if (
             self._device_info["type"] == self._DEVICE_D5NEXT
             or self._device_info["type"] == self._DEVICE_OCTO
-            or self._device_info["type"] == self._DEVICE_QUADRO
         ):
             # Not yet reverse engineered / implemented
             raise NotSupportedByDriver()
@@ -460,7 +539,7 @@ class Aquacomputer(UsbHidDriver):
         fan_ctrl_offset = self._device_info["fan_ctrl"][channel]
 
         # Set fan to direct percent-value mode
-        ctrl_settings[fan_ctrl_offset + _AQC_FAN_TYPE_OFFSET] = 0
+        ctrl_settings[fan_ctrl_offset + _AQC_FAN_TYPE_OFFSET] = _AQC_FAN_MODE_DIRECT
 
         # Write down duty for channel
         put_unaligned_be16(

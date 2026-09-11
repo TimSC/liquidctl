@@ -4,6 +4,7 @@ from _testutils import MockHidapiDevice, Report
 from liquidctl.driver.hwmon import HwmonDevice
 from liquidctl.driver.aquacomputer import Aquacomputer
 from liquidctl.error import NotSupportedByDriver, NotSupportedByDevice
+from liquidctl.util import mkCrcFun
 
 D5NEXT_SAMPLE_STATUS_REPORT = bytes.fromhex(
     "00030DCB597C00010000006403FF00000051000004DC14000001E0007A98AF000"
@@ -988,6 +989,32 @@ def test_quadro_set_fixed_speeds_hwmon(mockQuadroDevice, has_support, tmp_path):
         assert fan_report.data[0x8A:0x8D] == [0, 19, 136]  # 0, <5000>
 
 
-def test_quadro_speed_profiles_not_supported(mockQuadroDevice):
-    with pytest.raises(NotSupportedByDriver):
-        mockQuadroDevice.set_speed_profile("fan", None)
+def test_quadro_set_speed_profile_directly(mockQuadroDevice):
+    profile = [(20 + i, i * 7) for i in range(16)]
+
+    mockQuadroDevice.set_speed_profile("fan2", profile, temperature_sensor=3)
+
+    (report,) = mockQuadroDevice.device.sent
+
+    assert report.number == 3
+    assert report.data[0x8A] == 2  # Curve mode
+    assert report.data[0x8D:0x8F] == [0, 2]  # Temperature sensor 3, 0-based
+    assert report.data[0x9D:0x9F] == [0x07, 0xD0]  # Start value, 20°C
+    assert report.data[0x9F:0xBF] == [
+        value for temp, _ in profile for value in (temp * 100).to_bytes(2, "big")
+    ]
+    assert report.data[0xBF:0xDF] == [
+        value
+        for _, duty in profile
+        for value in (min(duty, 100) * 100).to_bytes(2, "big")
+    ]
+
+    crc16usb_func = mkCrcFun("crc-16-usb")
+    checksum_part = bytes([report.number] + report.data[:-2])[1:]
+    checksum_bytes = int.from_bytes(report.data[-2:], "big")
+    assert checksum_bytes == crc16usb_func(checksum_part)
+
+
+def test_quadro_set_speed_profile_requires_16_points(mockQuadroDevice):
+    with pytest.raises(ValueError, match="exactly 16"):
+        mockQuadroDevice.set_speed_profile("fan1", [(20, 30), (40, 100)])
