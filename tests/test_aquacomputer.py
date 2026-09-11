@@ -758,7 +758,9 @@ def test_octo_set_fixed_speeds_hwmon(mockOctoDevice, has_support, tmp_path):
 
 
 def test_octo_set_speed_profile(mockOctoDevice):
-    mockOctoDevice.set_speed_profile("fan1", [(30, 20), (40, 60), (50, 100)])
+    mockOctoDevice.set_speed_profile(
+        "fan1", [(30, 20), (40, 60), (50, 100)], temperature_sensor=3
+    )
 
     (report,) = mockOctoDevice.device.sent
 
@@ -766,6 +768,9 @@ def test_octo_set_speed_profile(mockOctoDevice):
 
     # fan1 is switched to the curve control type
     assert report.data[0x59] == 0x02
+
+    # selected controller source is stored as a 0-based index
+    assert report.data[0x5C:0x5E] == [0, 2]
 
     # sixteen (temperature, power) points, in centidegrees and centipercent,
     # evenly spanning the profile
@@ -1057,7 +1062,7 @@ def test_quadro_set_speed_profile(mockQuadroDevice):
     # fan2 is switched to the curve control type
     assert report.data[0x8A] == 0x02
 
-    # the Quadro stores the selected controller source as a 0-based index
+    # selected controller source is stored as a 0-based index
     assert report.data[0x8D:0x8F] == [0, 2]
 
     # sixteen (temperature, power) points, in centidegrees and centipercent,
@@ -1077,3 +1082,13 @@ def test_quadro_set_speed_profile(mockQuadroDevice):
     checksum_part = bytes([report.number] + report.data[:-2])[1:]
     checksum_bytes = int.from_bytes(report.data[-2:], "big")
     assert checksum_bytes == crc16usb_func(checksum_part)
+
+
+def test_quadro_set_speed_profile_keeps_source_by_default(mockQuadroDevice):
+    original_source = list(QUADRO_SAMPLE_CONTROL_REPORT[0x8D:0x8F])
+
+    mockQuadroDevice.set_speed_profile("fan2", [(20, 20), (40, 60), (60, 100)])
+
+    (report,) = mockQuadroDevice.device.sent
+
+    assert report.data[0x8D:0x8F] == original_source
