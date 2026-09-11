@@ -34,6 +34,7 @@ Fan speed control subgroups can be found in the control report, and it's current
 |------------------|-------------------------|
 | Speed curve type | 0x00                    |
 | Speed (0-100%)   | 0x01                    |
+| Sensor source    | 0x03                    |
 
 The `Speed curve type` above understands these values (list may be incomplete):
 
@@ -43,7 +44,18 @@ The `Speed curve type` above understands these values (list may be incomplete):
 | 1     | PID control mode                              |
 | 2     | Fan curve mode                                |
 
-The liquidctl driver currently supports only the manual mode.
+In fan curve mode, the speed curve starts at relative offset `0x13` within the
+fan speed control subgroup:
+
+| What                            | Where (relative offset) |
+|---------------------------------|-------------------------|
+| Curve start temperature         | 0x00                    |
+| Curve temperatures, 16 × 2 bytes | 0x02                    |
+| Curve duties, 16 × 2 bytes      | 0x22                    |
+
+Temperatures and duties are stored as centi-degrees Celsius and centi-percent.
+The liquidctl driver currently supports manual mode on all Aquacomputer devices
+and fan curve mode on Quadro.
 
 ## D5 Next pump
 

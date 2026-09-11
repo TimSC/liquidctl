@@ -475,6 +475,7 @@ class Aquacomputer(UsbHidDriver):
         checksum_bytes = crc16usb_func(checksum_part)
         put_unaligned_be16(checksum_bytes, ctrl_settings, report_length - 2)
 
+        # Some devices (Octo, Quadro and Aquaero) can not accept reports in quick succession, so slow down a bit
         time.sleep(0.2)
 
         self.device.send_feature_report(ctrl_settings)
