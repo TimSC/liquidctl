@@ -34,6 +34,7 @@ Fan speed control subgroups can be found in the control report, and it's current
 |---------------------------------------------|-------------------------|
 | Speed curve type                            | 0x00                    |
 | Speed (0-100%)                              | 0x01                    |
+| Sensor source (Quadro)                      | 0x03                    |
 | Curve start temperature                     | 0x13                    |
 | Curve temperatures (16 × u16be)             | 0x15                    |
 | Curve powers (16 × u16be)                   | 0x35                    |
@@ -52,7 +53,8 @@ The `Speed curve type` above understands these values (list may be incomplete):
 | 2     | Fan curve mode                                |
 
 The liquidctl driver supports the manual mode on all of these devices, and the
-fan curve mode on the Octo.
+fan curve mode on the Octo and Quadro. On the Quadro, the sensor source is
+stored as a zero-based temperature sensor index.
 
 ## D5 Next pump
 

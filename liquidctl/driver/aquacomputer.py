@@ -78,6 +78,7 @@ _AQC_CTRL_REPORT_ID = 0x03
 
 _AQC_FAN_TYPE_OFFSET = 0x00
 _AQC_FAN_PERCENT_OFFSET = 0x01
+_AQC_FAN_SOURCE_OFFSET = 0x03
 
 # Fan controller types; the "direct percent" value is what _set_fixed_speed_directly
 # selects, and the curve type makes the device follow the stored temperature/power
@@ -447,7 +448,9 @@ class Aquacomputer(UsbHidDriver):
 
         return self._get_status_directly()
 
-    def set_speed_profile(self, channel, profile, **kwargs):
+    def set_speed_profile(
+        self, channel, profile, temperature_sensor=1, direct_access=False, **kwargs
+    ):
         """Set a fan to follow a speed profile.
 
         Valid channel values are 'fanN', where N >= 1 is the fan number.
@@ -465,13 +468,20 @@ class Aquacomputer(UsbHidDriver):
         if self._device_info["type"] in [self._DEVICE_FARBWERK360, self._DEVICE_FARBWERK]:
             raise NotSupportedByDevice()
 
-        if self._device_info["type"] != self._DEVICE_OCTO:
+        if self._device_info["type"] not in [self._DEVICE_OCTO, self._DEVICE_QUADRO]:
             # Not yet reverse engineered / implemented
             raise NotSupportedByDriver()
 
         if channel not in self._device_info["fan_ctrl"]:
             channels = ", ".join(self._device_info["fan_ctrl"].keys())
             raise ValueError(f"unknown channel, should be one of: {channels}")
+
+        if self._hwmon and not direct_access:
+            _LOGGER.warning(
+                "required speed profile functionality is not available in %s kernel driver, "
+                "falling back to direct access",
+                self._hwmon.driver,
+            )
 
         profile = list(profile)
         if not profile:
@@ -505,6 +515,19 @@ class Aquacomputer(UsbHidDriver):
 
         # Set fan to follow its stored curve
         ctrl_settings[fan_ctrl_offset + _AQC_FAN_TYPE_OFFSET] = _AQC_FAN_TYPE_CURVE
+        if self._device_info["type"] == self._DEVICE_QUADRO:
+            temp_sensor_count = len(self._device_info["temp_sensors"]) + len(
+                self._device_info["virt_temp_sensors"]
+            )
+            temperature_sensor = clamp(temperature_sensor, 1, temp_sensor_count)
+            # The Quadro stores the selected controller source sensor as a
+            # zero-based index. The Octo uses the source already configured on
+            # the device.
+            put_unaligned_be16(
+                temperature_sensor - 1,
+                ctrl_settings,
+                fan_ctrl_offset + _AQC_FAN_SOURCE_OFFSET,
+            )
 
         for i, (temp, duty) in enumerate(points):
             # Centidegrees Celsius and centipercent
