@@ -758,9 +758,7 @@ def test_octo_set_fixed_speeds_hwmon(mockOctoDevice, has_support, tmp_path):
 
 
 def test_octo_set_speed_profile(mockOctoDevice):
-    mockOctoDevice.set_speed_profile(
-        "fan1", [(30, 20), (40, 60), (50, 100)], temperature_sensor=3
-    )
+    mockOctoDevice.set_speed_profile("fan1", [(30, 20), (40, 60), (50, 100)], temperature_sensor=3)
 
     (report,) = mockOctoDevice.device.sent
 
@@ -792,9 +790,7 @@ def test_octo_set_speed_profile_invalid_channel(mockOctoDevice):
 
 
 def test_octo_set_speed_profile_clamps_source_to_physical_sensors(mockOctoDevice):
-    mockOctoDevice.set_speed_profile(
-        "fan1", [(30, 20), (40, 60), (50, 100)], temperature_sensor=20
-    )
+    mockOctoDevice.set_speed_profile("fan1", [(30, 20), (40, 60), (50, 100)], temperature_sensor=20)
 
     (report,) = mockOctoDevice.device.sent
 
